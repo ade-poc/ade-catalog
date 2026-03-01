@@ -357,6 +357,32 @@ success "Catalog synced (state: $SYNC_STATE)"
 # STEP 11 — Deploy VM Environment
 # ─────────────────────────────────────────────
 step "11" "Deploying VM Environment: $ENV_NAME (5-8 mins)"
+
+log "Checking if environment '$ENV_NAME' already exists..."
+ENV_EXISTS=$(az devcenter dev environment show \
+  --endpoint $DEVCENTER_URI \
+  --project-name $PROJECT \
+  --name $ENV_NAME \
+  2>/dev/null)
+
+if [ -n "$ENV_EXISTS" ]; then
+  warn "Environment '$ENV_NAME' already exists. Deleting it first..."
+  az devcenter dev environment delete \
+    --endpoint $DEVCENTER_URI \
+    --project-name $PROJECT \
+    --name $ENV_NAME \
+    --yes
+  log "Waiting for environment deletion to complete..."
+  while az devcenter dev environment show \
+      --endpoint $DEVCENTER_URI \
+      --project-name $PROJECT \
+      --name $ENV_NAME \
+      2>/dev/null; do
+    sleep 10
+  done
+  success "Existing environment deleted"
+fi
+
 log "Starting VM deployment at $(ts)..."
 az devcenter dev environment create \
   --endpoint $DEVCENTER_URI \
