@@ -98,7 +98,7 @@ success "Subscription info fetched"
 step "2" "Creating Resource Group: $RG in $LOCATION"
 
 # Wait for any existing RG with same name to finish deleting
-MAX_WAIT=300  # 5 minutes max
+MAX_WAIT=900  # 15 minutes max (ADE resource groups can take longer)
 WAITED=0
 while true; do
   STATE=$(az group show --name $RG --query "properties.provisioningState" -o tsv 2>/dev/null) || STATE="Gone"
@@ -326,44 +326,60 @@ az devcenter admin catalog create \
     secret-identifier="$SECRET_ID" \
   --output none
 
-log "Waiting 60s for catalog sync..."
-sleep 60
+# Re-set the PAT secret to ensure ADE picks up a fresh version
+log "Re-setting GitHub PAT in Key Vault to ensure fresh auth..."
+az keyvault secret set \
+  --vault-name $KV_NAME \
+  --name "github-pat" \
+  --value "$GITHUB_PAT" \
+  --output none
 
-SYNC_STATE=$(az devcenter admin catalog show \
-  --name $CATALOG_NAME \
-  --dev-center-name $DEVCENTER \
-  --resource-group $RG \
-  --query "syncState" -o tsv)
-log "Sync state: $SYNC_STATE"
-
-if [ "$SYNC_STATE" != "Succeeded" ]; then
-  warn "Forcing catalog sync..."
-  az devcenter admin catalog sync \
-    --name $CATALOG_NAME \
-    --dev-center-name $DEVCENTER \
-    --resource-group $RG \
-    --no-wait
-  sleep 30
+log "Waiting for catalog sync to complete (polling every 15s, max 10 mins)..."
+SYNC_WAITED=0
+SYNC_MAX=600
+while true; do
   SYNC_STATE=$(az devcenter admin catalog show \
     --name $CATALOG_NAME \
     --dev-center-name $DEVCENTER \
     --resource-group $RG \
     --query "syncState" -o tsv)
-  log "Sync state after retry: $SYNC_STATE"
-fi
-success "Catalog synced (state: $SYNC_STATE)"
+  log "Catalog sync state: $SYNC_STATE (${SYNC_WAITED}s elapsed)"
+
+  if [ "$SYNC_STATE" == "Succeeded" ]; then
+    break
+  elif [ "$SYNC_STATE" == "Failed" ]; then
+    warn "Catalog sync failed — re-setting PAT and forcing re-sync..."
+    az keyvault secret set \
+      --vault-name $KV_NAME \
+      --name "github-pat" \
+      --value "$GITHUB_PAT" \
+      --output none
+    az devcenter admin catalog sync \
+      --name $CATALOG_NAME \
+      --dev-center-name $DEVCENTER \
+      --resource-group $RG \
+      --no-wait
+  fi
+
+  if [ $SYNC_WAITED -ge $SYNC_MAX ]; then
+    error "Timed out waiting for catalog sync after ${SYNC_MAX}s (last state: $SYNC_STATE)"
+  fi
+
+  sleep 15
+  SYNC_WAITED=$((SYNC_WAITED + 15))
+done
+success "Catalog synced successfully"
 
 # ─────────────────────────────────────────────
 # STEP 11 — Deploy VM Environment
 # ─────────────────────────────────────────────
 step "11" "Deploying VM Environment: $ENV_NAME (5-8 mins)"
-
 log "Checking if environment '$ENV_NAME' already exists..."
 ENV_EXISTS=$(az devcenter dev environment show \
   --endpoint $DEVCENTER_URI \
   --project-name $PROJECT \
   --name $ENV_NAME \
-  2>/dev/null)
+  2>/dev/null) || true
 
 if [ -n "$ENV_EXISTS" ]; then
   warn "Environment '$ENV_NAME' already exists. Deleting it first..."
