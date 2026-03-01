@@ -11,7 +11,9 @@ var adminPassword = uniqueString(resourceGroup().id, vmName)
 resource pip 'Microsoft.Network/publicIPAddresses@2022-01-01' = {
   name: pipName
   location: location
-  sku: { name: 'Basic' }
+  sku: {
+    name: 'Basic'
+  }
   properties: {
     publicIPAllocationMethod: 'Dynamic'
     dnsSettings: {
@@ -46,13 +48,19 @@ resource vnet 'Microsoft.Network/virtualNetworks@2022-01-01' = {
   name: vnetName
   location: location
   properties: {
-    addressSpace: { addressPrefixes: ['10.0.0.0/16'] }
+    addressSpace: {
+      addressPrefixes: [
+        '10.0.0.0/16'
+      ]
+    }
     subnets: [
       {
         name: 'default'
         properties: {
           addressPrefix: '10.0.0.0/24'
-          networkSecurityGroup: { id: nsg.id }
+          networkSecurityGroup: {
+            id: nsg.id
+          }
         }
       }
     ]
@@ -67,9 +75,13 @@ resource nic 'Microsoft.Network/networkInterfaces@2022-01-01' = {
       {
         name: 'ipconfig1'
         properties: {
-          subnet: { id: vnet.properties.subnets[0].id }
+          subnet: {
+            id: vnet.properties.subnets[0].id
+          }
           privateIPAllocationMethod: 'Dynamic'
-          publicIPAddress: { id: pip.id }
+          publicIPAddress: {
+            id: pip.id
+          }
         }
       }
     ]
@@ -80,16 +92,14 @@ resource vm 'Microsoft.Compute/virtualMachines@2022-03-01' = {
   name: vmName
   location: location
   properties: {
-    hardwareProfile: { vmSize: 'Standard_B1s' }
+    hardwareProfile: {
+      vmSize: 'Standard_B1s'
+    }
     osProfile: {
       computerName: vmName
       adminUsername: adminUsername
       adminPassword: adminPassword
-      customData: base64('''#!/bin/bash
-apt-get update -y
-apt-get install -y python3
-python3 -c "print('Hello World from Azure VM!')" > /tmp/hello_output.txt
-''')
+      customData: base64('#!/bin/bash\napt-get update -y\napt-get install -y python3\npython3 -c "print(chr(72)+chr(101)+chr(108)+chr(108)+chr(111)+chr(32)+chr(87)+chr(111)+chr(114)+chr(108)+chr(100))" > /tmp/hello_output.txt\n')
     }
     storageProfile: {
       imageReference: {
@@ -100,8 +110,21 @@ python3 -c "print('Hello World from Azure VM!')" > /tmp/hello_output.txt
       }
       osDisk: {
         createOption: 'FromImage'
-        managedDisk: { storageAccountType: 'Standard_LRS' }
+        managedDisk: {
+          storageAccountType: 'Standard_LRS'
+        }
       }
     }
     networkProfile: {
-      networkInterfaces: [{ id:
+      networkInterfaces: [
+        {
+          id: nic.id
+        }
+      ]
+    }
+  }
+}
+
+output sshCommand string = 'ssh ${adminUsername}@${pip.properties.dnsSettings.fqdn}'
+output adminPassword string = adminPassword
+output vmFqdn string = pip.properties.dnsSettings.fqdn
