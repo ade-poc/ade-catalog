@@ -10,9 +10,9 @@ set -e
 # ─────────────────────────────────────────────
 # CONFIGURATION — Edit these values
 # ─────────────────────────────────────────────
-RG="rg-ade-prod"
+RG="rg-ade-demo3"
 LOCATION="eastus"
-DEVCENTER="my-devcenter"
+DEVCENTER="my-devcenter2"
 PROJECT="my-ade-project"
 ENV_TYPE="Dev"
 CATALOG_NAME="my-catalog"
