@@ -142,6 +142,15 @@ success "All providers registered"
 # STEP 4 — Dev Center
 # ─────────────────────────────────────────────
 step "4" "Creating Dev Center: $DEVCENTER"
+
+# Check if Dev Center name already exists in tenant
+EXISTING_DC=$(az devcenter admin devcenter list \
+  --query "[?name=='$DEVCENTER'].name" -o tsv 2>/dev/null)
+if [ ! -z "$EXISTING_DC" ]; then
+  warn "Dev Center '$DEVCENTER' already exists in tenant"
+  warn "Either delete it first or change DEVCENTER name in config"
+  error "Dev Center name must be unique across the entire tenant"
+fi
 az devcenter admin devcenter create \
   --name $DEVCENTER \
   --resource-group $RG \
