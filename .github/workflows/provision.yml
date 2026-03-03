@@ -1,0 +1,142 @@
+name: Provision ADE Environment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    env:
+      ENV_NAME: env-pr-${{ github.event.pull_request.number }}
+      PROJECT: my-ade-project
+      ENV_TYPE: Dev
+      CATALOG_NAME: my-catalog
+      ADMIN_USERNAME: azureuser
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install devcenter CLI extension
+        run: az extension add --name devcenter --output none
+
+      - name: Delete existing environment if present
+        run: |
+          ENV_EXISTS=$(az devcenter dev environment show \
+            --endpoint "${{ secrets.DEVCENTER_URI }}" \
+            --project-name $PROJECT \
+            --name $ENV_NAME \
+            2>/dev/null) || true
+          if [ -n "$ENV_EXISTS" ]; then
+            echo "Environment $ENV_NAME already exists — deleting..."
+            az devcenter dev environment delete \
+              --endpoint "${{ secrets.DEVCENTER_URI }}" \
+              --project-name $PROJECT \
+              --name $ENV_NAME \
+              --yes
+            echo "Waiting for deletion..."
+            while az devcenter dev environment show \
+                --endpoint "${{ secrets.DEVCENTER_URI }}" \
+                --project-name $PROJECT \
+                --name $ENV_NAME \
+                2>/dev/null; do
+              sleep 10
+            done
+            echo "Deleted."
+          fi
+
+      - name: Create ADE Environment
+        run: |
+          echo "Provisioning environment: $ENV_NAME"
+          az devcenter dev environment create \
+            --endpoint "${{ secrets.DEVCENTER_URI }}" \
+            --project-name $PROJECT \
+            --name $ENV_NAME \
+            --environment-type $ENV_TYPE \
+            --catalog-name $CATALOG_NAME \
+            --environment-definition-name "LinuxVM" \
+            --parameters "{\"adminUsername\": \"$ADMIN_USERNAME\"}"
+          echo "Environment provisioned successfully"
+
+      - name: Get SSH Details
+        id: ssh
+        run: |
+          ENV_RG=$(az devcenter dev environment show \
+            --endpoint "${{ secrets.DEVCENTER_URI }}" \
+            --project-name $PROJECT \
+            --name $ENV_NAME \
+            --user-id me \
+            --query "resourceGroupId" -o tsv | sed 's|.*/||')
+
+          DEPLOYMENT_NAME=$(az deployment group list \
+            --resource-group $ENV_RG \
+            --query "[0].name" -o tsv)
+
+          SSH_COMMAND=$(az deployment group show \
+            --resource-group $ENV_RG \
+            --name $DEPLOYMENT_NAME \
+            --query "properties.outputs.sshCommand.value" -o tsv)
+
+          VM_PASSWORD=$(az deployment group show \
+            --resource-group $ENV_RG \
+            --name $DEPLOYMENT_NAME \
+            --query "properties.outputs.adminPassword.value" -o tsv)
+
+          VM_FQDN=$(az deployment group show \
+            --resource-group $ENV_RG \
+            --name $DEPLOYMENT_NAME \
+            --query "properties.outputs.vmFqdn.value" -o tsv)
+
+          echo "ssh_command=$SSH_COMMAND" >> $GITHUB_OUTPUT
+          echo "vm_password=$VM_PASSWORD" >> $GITHUB_OUTPUT
+          echo "vm_fqdn=$VM_FQDN" >> $GITHUB_OUTPUT
+          echo "env_rg=$ENV_RG" >> $GITHUB_OUTPUT
+
+      - name: Run Hello World on VM
+        id: hello
+        run: |
+          echo "Waiting 60s for VM to boot..."
+          sleep 60
+          HELLO=$(sshpass -p "${{ steps.ssh.outputs.vm_password }}" ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=30 \
+            $ADMIN_USERNAME@${{ steps.ssh.outputs.vm_fqdn }} \
+            'python3 -c "print(\"Hello World from Azure VM!\")"' 2>/dev/null) || HELLO="(SSH not ready — connect manually)"
+          echo "hello_output=$HELLO" >> $GITHUB_OUTPUT
+
+      - name: Post PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ✅ ADE Environment Provisioned
+
+            | Field | Value |
+            |-------|-------|
+            | **Environment** | \`${{ env.ENV_NAME }}\` |
+            | **Resource Group** | \`${{ steps.ssh.outputs.env_rg }}\` |
+            | **VM FQDN** | \`${{ steps.ssh.outputs.vm_fqdn }}\` |
+            | **Username** | \`${{ env.ADMIN_USERNAME }}\` |
+            | **Password** | \`${{ steps.ssh.outputs.vm_password }}\` |
+
+            **SSH Command:**
+            \`\`\`
+            ${{ steps.ssh.outputs.ssh_command }}
+            \`\`\`
+
+            **Hello World Output:**
+            \`\`\`
+            ${{ steps.hello.outputs.hello_output }}
+            \`\`\`
+
+            > 🗑️ This environment will be automatically destroyed when the PR is closed.`
+            })
