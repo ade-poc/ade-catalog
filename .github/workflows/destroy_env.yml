@@ -1,0 +1,54 @@
+name: Destroy ADE Environment
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    env:
+      ENV_NAME: env-pr-${{ github.event.pull_request.number }}
+      PROJECT: my-ade-project
+
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install devcenter CLI extension
+        run: az extension add --name devcenter --output none
+
+      - name: Delete ADE Environment
+        run: |
+          echo "Destroying environment: $ENV_NAME"
+          ENV_EXISTS=$(az devcenter dev environment show \
+            --endpoint "${{ secrets.DEVCENTER_URI }}" \
+            --project-name $PROJECT \
+            --name $ENV_NAME \
+            2>/dev/null) || true
+
+          if [ -n "$ENV_EXISTS" ]; then
+            az devcenter dev environment delete \
+              --endpoint "${{ secrets.DEVCENTER_URI }}" \
+              --project-name $PROJECT \
+              --name $ENV_NAME \
+              --yes
+            echo "Environment $ENV_NAME deleted"
+          else
+            echo "Environment $ENV_NAME not found — already deleted"
+          fi
+
+      - name: Post PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🗑️ ADE Environment Destroyed
+
+              Environment \`${{ env.ENV_NAME }}\` has been automatically destroyed as this PR was closed.`
+            })
