@@ -125,6 +125,6 @@ resource vm 'Microsoft.Compute/virtualMachines@2022-03-01' = {
   }
 }
 
-output sshCommand string = 'ssh ${adminUsername}@${pip.properties.dnsSettings.fqdn}'
+output sshCommand string = 'ssh ${adminUsername}@${pip.properties.ipAddress}'
 output adminPassword string = adminPassword
-output vmFqdn string = pip.properties.dnsSettings.fqdn
+output vmIp string = pip.properties.ipAddress

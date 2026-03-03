@@ -64,8 +64,8 @@ jobs:
             --parameters "{\"adminUsername\": \"$ADMIN_USERNAME\"}"
           echo "Environment provisioned successfully"
 
-      - name: Get SSH Details
-        id: ssh
+      - name: Get VM Details
+        id: vm
         run: |
           ENV_RG=$(az devcenter dev environment show \
             --endpoint "${{ secrets.DEVCENTER_URI }}" \
@@ -83,19 +83,19 @@ jobs:
             --name $DEPLOYMENT_NAME \
             --query "properties.outputs.sshCommand.value" -o tsv)
 
+          VM_IP=$(az deployment group show \
+            --resource-group $ENV_RG \
+            --name $DEPLOYMENT_NAME \
+            --query "properties.outputs.vmIp.value" -o tsv)
+
           VM_PASSWORD=$(az deployment group show \
             --resource-group $ENV_RG \
             --name $DEPLOYMENT_NAME \
             --query "properties.outputs.adminPassword.value" -o tsv)
 
-          VM_FQDN=$(az deployment group show \
-            --resource-group $ENV_RG \
-            --name $DEPLOYMENT_NAME \
-            --query "properties.outputs.vmFqdn.value" -o tsv)
-
           echo "ssh_command=$SSH_COMMAND" >> $GITHUB_OUTPUT
+          echo "vm_ip=$VM_IP" >> $GITHUB_OUTPUT
           echo "vm_password=$VM_PASSWORD" >> $GITHUB_OUTPUT
-          echo "vm_fqdn=$VM_FQDN" >> $GITHUB_OUTPUT
           echo "env_rg=$ENV_RG" >> $GITHUB_OUTPUT
 
       - name: Run Hello World on VM
@@ -103,10 +103,10 @@ jobs:
         run: |
           echo "Waiting 60s for VM to boot..."
           sleep 60
-          HELLO=$(sshpass -p "${{ steps.ssh.outputs.vm_password }}" ssh \
+          HELLO=$(sshpass -p "${{ steps.vm.outputs.vm_password }}" ssh \
             -o StrictHostKeyChecking=no \
             -o ConnectTimeout=30 \
-            $ADMIN_USERNAME@${{ steps.ssh.outputs.vm_fqdn }} \
+            $ADMIN_USERNAME@${{ steps.vm.outputs.vm_ip }} \
             'python3 -c "print(\"Hello World from Azure VM!\")"' 2>/dev/null) || HELLO="(SSH not ready — connect manually)"
           echo "hello_output=$HELLO" >> $GITHUB_OUTPUT
 
@@ -118,19 +118,18 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## ✅ ADE Environment Provisioned
+              body: `## ✅ ADE Dev Environment Ready
 
             | Field | Value |
             |-------|-------|
             | **Environment** | \`${{ env.ENV_NAME }}\` |
-            | **Resource Group** | \`${{ steps.ssh.outputs.env_rg }}\` |
-            | **VM FQDN** | \`${{ steps.ssh.outputs.vm_fqdn }}\` |
+            | **Resource Group** | \`${{ steps.vm.outputs.env_rg }}\` |
+            | **VM IP** | \`${{ steps.vm.outputs.vm_ip }}\` |
             | **Username** | \`${{ env.ADMIN_USERNAME }}\` |
-            | **Password** | \`${{ steps.ssh.outputs.vm_password }}\` |
 
             **SSH Command:**
             \`\`\`
-            ${{ steps.ssh.outputs.ssh_command }}
+            ${{ steps.vm.outputs.ssh_command }}
             \`\`\`
 
             **Hello World Output:**
@@ -138,5 +137,5 @@ jobs:
             ${{ steps.hello.outputs.hello_output }}
             \`\`\`
 
-            > 🗑️ This environment will be automatically destroyed when the PR is closed.`
+            > 🗑️ Environment will be automatically deleted when this PR is closed.`
             })
