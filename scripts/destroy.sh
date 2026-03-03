@@ -36,11 +36,32 @@ total_elapsed(){
 log()    { echo -e "${BLUE}  [$(ts)]${NC} $1"; }
 success(){ echo -e "${GREEN}  [$(ts)] ✅ $1 (total: $(total_elapsed))${NC}"; echo ""; }
 warn()   { echo -e "${YELLOW}  [$(ts)] ⚠️  $1${NC}"; }
+error()  { echo -e "${RED}  [$(ts)] ❌ $1${NC}"; exit 1; }
 step(){
   echo ""
   echo -e "${CYAN}┌─────────────────────────────────────────────────┐${NC}"
   echo -e "${CYAN}│ [$(ts)] $1${NC}"
   echo -e "${CYAN}└─────────────────────────────────────────────────┘${NC}"
+}
+
+wait_for_rg_deletion(){
+  local RG_NAME=$1
+  local MAX_WAIT=900  # 15 minutes
+  local WAITED=0
+  log "Waiting for '$RG_NAME' to fully delete..."
+  while true; do
+    STATE=$(az group show --name $RG_NAME --query "properties.provisioningState" -o tsv 2>/dev/null) || STATE="Gone"
+    if [ "$STATE" == "Gone" ] || [ -z "$STATE" ]; then
+      log "'$RG_NAME' fully deleted ✓"
+      break
+    fi
+    if [ $WAITED -ge $MAX_WAIT ]; then
+      error "Timed out waiting for '$RG_NAME' to delete after ${MAX_WAIT}s"
+    fi
+    warn "'$RG_NAME' still deleting (state: $STATE)... ${WAITED}s elapsed"
+    sleep 15
+    WAITED=$((WAITED + 15))
+  done
 }
 
 echo ""
@@ -88,16 +109,15 @@ if [ ! -z "$DEVCENTER_URI" ]; then
   success "Environment deleted"
 fi
 
+# ─────────────────────────────────────────────
+# STEP 2 — Delete Extra RGs
+# ─────────────────────────────────────────────
 step "Deleting Extra Resource Groups from Previous Attempts"
 for EXTRA_RG in $EXTRA_RGS; do
   EXISTS=$(az group show --name $EXTRA_RG --query name -o tsv 2>/dev/null) || true
   if [ ! -z "$EXISTS" ]; then
     log "Deleting: $EXTRA_RG..."
-    az group delete \
-      --name $EXTRA_RG \
-      --yes \
-      --no-wait \
-      --output none 2>/dev/null || warn "Could not delete $EXTRA_RG"
+    az group delete --name $EXTRA_RG --yes --no-wait --output none 2>/dev/null || warn "Could not delete $EXTRA_RG"
   else
     log "$EXTRA_RG not found, skipping"
   fi
@@ -105,7 +125,7 @@ done
 success "Extra resource groups deletion initiated"
 
 # ─────────────────────────────────────────────
-# STEP 2 — Delete VM Resource Groups
+# STEP 3 — Delete VM Resource Groups
 # ─────────────────────────────────────────────
 step "Deleting VM Resource Groups (my-ade-project-* pattern)"
 VM_RGS=$(az group list \
@@ -117,28 +137,26 @@ if [ -z "$VM_RGS" ]; then
 else
   for RG_NAME in $VM_RGS; do
     log "Deleting: $RG_NAME..."
-    az group delete \
-      --name $RG_NAME \
-      --yes \
-      --no-wait \
-      --output none 2>/dev/null || warn "Could not delete $RG_NAME"
+    az group delete --name $RG_NAME --yes --no-wait --output none 2>/dev/null || warn "Could not delete $RG_NAME"
   done
   success "VM resource groups deletion initiated"
 fi
 
 # ─────────────────────────────────────────────
-# STEP 3 — Delete Main Resource Group
+# STEP 4 — Delete Main Resource Group & WAIT
 # ─────────────────────────────────────────────
-step "Deleting Main Resource Group: $RG"
+step "Deleting Main Resource Group: $RG (and waiting for completion)"
 az group delete \
   --name $RG \
   --yes \
   --no-wait \
   --output none 2>/dev/null || warn "Resource group $RG not found"
-success "Main resource group deletion initiated"
+
+wait_for_rg_deletion $RG
+success "Main resource group fully deleted"
 
 # ─────────────────────────────────────────────
-# STEP 4 — Clean Orphaned Role Assignments
+# STEP 5 — Clean Orphaned Role Assignments
 # ─────────────────────────────────────────────
 step "Cleaning Orphaned Role Assignments"
 log "Removing role assignments for deleted service principals..."
@@ -164,10 +182,6 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║           ✅ DESTROY COMPLETE                   ║${NC}"
 echo -e "${GREEN}║        Total time: $(total_elapsed)                    ║${NC}"
 echo -e "${GREEN}╠═════════════════════════════════════════════════╣${NC}"
-echo -e "${YELLOW}  Note: Resource group deletions run in background${NC}"
-echo -e "${YELLOW}  Check status with:${NC}"
-echo -e "  az group show --name $RG --query provisioningState -o tsv"
-echo -e "${GREEN}╠═════════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}  To recreate everything from scratch:${NC}"
+echo -e "${CYAN}  All resources deleted. Ready to run:${NC}"
 echo -e "  ./setup.sh"
 echo -e "${GREEN}╚═════════════════════════════════════════════════╝${NC}"
