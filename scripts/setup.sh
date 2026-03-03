@@ -18,7 +18,7 @@ ENV_TYPE="Dev"
 CATALOG_NAME="my-catalog"
 ENV_NAME="my-dev-vm"
 GITHUB_REPO="https://github.com/srinipaddu/ade-catalog.git"
-GITHUB_PAT="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"
+GITHUB_PAT="${GITHUB_PAT:-YOUR_GITHUB_PAT_HERE}"  # set via: export GITHUB_PAT=ghp_xxx
 ADMIN_USERNAME="azureuser"
 VM_SIZE="Standard_D2s_v3"
 
@@ -78,6 +78,19 @@ az extension show --name devcenter > /dev/null 2>&1 || {
 }
 log "Updating devcenter extension..."
 az extension update --name devcenter --output none 2>/dev/null || true
+
+if [ "$GITHUB_PAT" == "YOUR_GITHUB_PAT_HERE" ] || [ -z "$GITHUB_PAT" ]; then
+  error "GITHUB_PAT is not set. Run: export GITHUB_PAT=ghp_yourtoken, then re-run setup.sh"
+fi
+
+# Verify PAT works against GitHub
+log "Verifying GitHub PAT..."
+GH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: token $GITHUB_PAT" \
+  https://api.github.com/repos/srinipaddu/ade-catalog)
+if [ "$GH_RESPONSE" != "200" ]; then
+  error "GitHub PAT is invalid or cannot access repo (HTTP $GH_RESPONSE). Generate a new PAT with 'repo' scope."
+fi
 success "Prerequisites verified"
 
 # ─────────────────────────────────────────────
@@ -96,30 +109,14 @@ success "Subscription info fetched"
 # STEP 2 — Resource Group
 # ─────────────────────────────────────────────
 step "2" "Creating Resource Group: $RG in $LOCATION"
-
-# Wait for any existing RG with same name to finish deleting
-MAX_WAIT=900  # 15 minutes max (ADE resource groups can take longer)
-WAITED=0
-while true; do
-  STATE=$(az group show --name $RG --query "properties.provisioningState" -o tsv 2>/dev/null) || STATE="Gone"
-  if [ "$STATE" == "Gone" ] || [ -z "$STATE" ]; then
-    log "No existing RG found — safe to create"
-    break
-  elif [ "$STATE" == "Deleting" ]; then
-    if [ $WAITED -ge $MAX_WAIT ]; then
-      error "Timed out waiting for RG '$RG' to finish deleting after ${MAX_WAIT}s"
-    fi
-    warn "RG '$RG' is still deleting... waiting 15s (${WAITED}s elapsed)"
-    sleep 15
-    WAITED=$((WAITED + 15))
-  else
-    warn "RG '$RG' exists with state: $STATE — deleting it first..."
-    az group delete --name $RG --yes --no-wait --output none
-    sleep 15
-    WAITED=$((WAITED + 15))
-  fi
-done
-
+STATE=$(az group show --name $RG --query "properties.provisioningState" -o tsv 2>/dev/null) || STATE="Gone"
+if [ "$STATE" == "Deleting" ]; then
+  error "RG '$RG' is still deleting. Wait for destroy.sh to fully complete before running setup.sh"
+elif [ "$STATE" != "Gone" ] && [ -n "$STATE" ]; then
+  warn "RG '$RG' already exists (state: $STATE) — deleting synchronously..."
+  az group delete --name $RG --yes --output none
+  log "RG deleted"
+fi
 az group create --name $RG --location $LOCATION --output none
 success "Resource group '$RG' created"
 
@@ -142,15 +139,6 @@ success "All providers registered"
 # STEP 4 — Dev Center
 # ─────────────────────────────────────────────
 step "4" "Creating Dev Center: $DEVCENTER"
-
-# Check if Dev Center name already exists in tenant
-EXISTING_DC=$(az devcenter admin devcenter list \
-  --query "[?name=='$DEVCENTER'].name" -o tsv 2>/dev/null)
-if [ ! -z "$EXISTING_DC" ]; then
-  warn "Dev Center '$DEVCENTER' already exists in tenant"
-  warn "Either delete it first or change DEVCENTER name in config"
-  error "Dev Center name must be unique across the entire tenant"
-fi
 az devcenter admin devcenter create \
   --name $DEVCENTER \
   --resource-group $RG \
@@ -176,14 +164,12 @@ success "Dev Center '$DEVCENTER' created"
 # STEP 5 — Roles for Dev Center Identity
 # ─────────────────────────────────────────────
 step "5" "Assigning Roles to Dev Center Managed Identity"
-log "Assigning Contributor..."
 az role assignment create \
   --assignee $PRINCIPAL_ID \
   --role "Contributor" \
   --scope "/subscriptions/$SUB_ID" \
   --output none
 
-log "Assigning User Access Administrator..."
 az role assignment create \
   --assignee $PRINCIPAL_ID \
   --role "User Access Administrator" \
@@ -326,15 +312,7 @@ az devcenter admin catalog create \
     secret-identifier="$SECRET_ID" \
   --output none
 
-# Re-set the PAT secret to ensure ADE picks up a fresh version
-log "Re-setting GitHub PAT in Key Vault to ensure fresh auth..."
-az keyvault secret set \
-  --vault-name $KV_NAME \
-  --name "github-pat" \
-  --value "$GITHUB_PAT" \
-  --output none
-
-log "Waiting for catalog sync to complete (polling every 15s, max 10 mins)..."
+log "Waiting for catalog sync (polling every 15s, max 10 mins)..."
 SYNC_WAITED=0
 SYNC_MAX=600
 while true; do
@@ -344,27 +322,19 @@ while true; do
     --resource-group $RG \
     --query "syncState" -o tsv)
   log "Catalog sync state: $SYNC_STATE (${SYNC_WAITED}s elapsed)"
-
   if [ "$SYNC_STATE" == "Succeeded" ]; then
     break
-  elif [ "$SYNC_STATE" == "Failed" ]; then
-    warn "Catalog sync failed — re-setting PAT and forcing re-sync..."
-    az keyvault secret set \
-      --vault-name $KV_NAME \
-      --name "github-pat" \
-      --value "$GITHUB_PAT" \
-      --output none
+  elif [ "$SYNC_STATE" == "Failed" ] || [ "$SYNC_STATE" == "Disconnected" ]; then
+    warn "Catalog sync $SYNC_STATE — forcing re-sync..."
     az devcenter admin catalog sync \
       --name $CATALOG_NAME \
       --dev-center-name $DEVCENTER \
       --resource-group $RG \
-      --no-wait
+      --no-wait 2>/dev/null || true
   fi
-
   if [ $SYNC_WAITED -ge $SYNC_MAX ]; then
     error "Timed out waiting for catalog sync after ${SYNC_MAX}s (last state: $SYNC_STATE)"
   fi
-
   sleep 15
   SYNC_WAITED=$((SYNC_WAITED + 15))
 done
@@ -374,6 +344,7 @@ success "Catalog synced successfully"
 # STEP 11 — Deploy VM Environment
 # ─────────────────────────────────────────────
 step "11" "Deploying VM Environment: $ENV_NAME (5-8 mins)"
+
 log "Checking if environment '$ENV_NAME' already exists..."
 ENV_EXISTS=$(az devcenter dev environment show \
   --endpoint $DEVCENTER_URI \
