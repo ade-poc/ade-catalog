@@ -1,2 +1,2 @@
 # ade-catalog
-Hello World v6 - from innovation lab
+Hello World v6 - from home
