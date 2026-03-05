@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADE Workflow</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: #0a0f1e;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'IBM Plex Sans', sans-serif;
+    padding: 40px 20px;
+  }
+
+  .diagram {
+    width: 100%;
+    max-width: 1100px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .header h1 {
+    font-size: 13px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #00d4ff;
+    margin-bottom: 12px;
+  }
+
+  .header h2 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+  }
+
+  .header h2 span {
+    color: #00d4ff;
+  }
+
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 48px;
+    flex-wrap: nowrap;
+  }
+
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 160px;
+    flex-shrink: 0;
+    animation: fadeUp 0.6s ease both;
+  }
+
+  .step:nth-child(1) { animation-delay: 0.1s; }
+  .step:nth-child(3) { animation-delay: 0.2s; }
+  .step:nth-child(5) { animation-delay: 0.3s; }
+  .step:nth-child(7) { animation-delay: 0.4s; }
+  .step:nth-child(9) { animation-delay: 0.5s; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .step-icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 14px;
+    position: relative;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .step-icon::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+    pointer-events: none;
+  }
+
+  .s1 .step-icon { background: linear-gradient(135deg, #1a3a5c, #0d2137); box-shadow: 0 0 30px rgba(0, 100, 255, 0.2); }
+  .s2 .step-icon { background: linear-gradient(135deg, #1a3a2a, #0d2118); box-shadow: 0 0 30px rgba(0, 180, 80, 0.2); }
+  .s3 .step-icon { background: linear-gradient(135deg, #3a2a0d, #1f1508); box-shadow: 0 0 30px rgba(255, 160, 0, 0.2); }
+  .s4 .step-icon { background: linear-gradient(135deg, #2a1a3a, #160d1f); box-shadow: 0 0 30px rgba(160, 80, 255, 0.2); }
+  .s5 .step-icon { background: linear-gradient(135deg, #1a2a3a, #0d1520); box-shadow: 0 0 30px rgba(0, 212, 255, 0.3); }
+
+  .step-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #4a5568;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  .step-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+    text-align: center;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+
+  .step-desc {
+    font-size: 11px;
+    color: #6b7a99;
+    text-align: center;
+    line-height: 1.5;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .arrow {
+    flex-shrink: 0;
+    width: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-bottom: 60px;
+    animation: fadeIn 0.4s ease both;
+    animation-delay: 0.3s;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .arrow svg {
+    width: 48px;
+    height: 16px;
+  }
+
+  .connector {
+    background: #0d1525;
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 12px;
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    margin-bottom: 32px;
+  }
+
+  .connector-label {
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: #4a5568;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .tag-blue { background: rgba(0, 100, 255, 0.15); color: #60a5fa; border: 1px solid rgba(0, 100, 255, 0.2); }
+  .tag-green { background: rgba(0, 200, 80, 0.12); color: #4ade80; border: 1px solid rgba(0, 200, 80, 0.2); }
+  .tag-orange { background: rgba(255, 160, 0, 0.12); color: #fbbf24; border: 1px solid rgba(255, 160, 0, 0.2); }
+  .tag-purple { background: rgba(160, 80, 255, 0.12); color: #c084fc; border: 1px solid rgba(160, 80, 255, 0.2); }
+  .tag-cyan { background: rgba(0, 212, 255, 0.12); color: #22d3ee; border: 1px solid rgba(0, 212, 255, 0.2); }
+
+  .footer-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 8px;
+  }
+
+  .info-card {
+    background: #0d1525;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 20px 24px;
+  }
+
+  .info-card h3 {
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #4a5568;
+    margin-bottom: 14px;
+  }
+
+  .info-card .items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .info-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: #8892aa;
+  }
+
+  .info-item .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot-blue { background: #3b82f6; }
+  .dot-green { background: #22c55e; }
+  .dot-orange { background: #f59e0b; }
+  .dot-cyan { background: #06b6d4; }
+  .dot-purple { background: #a855f7; }
+
+  .pr-comment {
+    background: #0d1a10;
+    border: 1px solid rgba(0, 200, 80, 0.2);
+    border-radius: 10px;
+    padding: 16px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+  }
+
+  .pr-comment .pr-header {
+    color: #4ade80;
+    font-weight: 600;
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+
+  .pr-line {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+
+  .pr-key { color: #6b7a99; min-width: 80px; }
+  .pr-val { color: #e2e8f0; }
+  .pr-val.green { color: #4ade80; }
+  .pr-val.cyan { color: #22d3ee; }
+
+  .watermark {
+    margin-top: 32px;
+    text-align: center;
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: #2a3548;
+    letter-spacing: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="diagram">
+
+  <div class="header">
+    <h1>Wells Fargo Innovation Lab · POC Phase 1</h1>
+    <h2>Azure Deployment Environments — <span>Developer Workflow</span></h2>
+  </div>
+
+  <!-- Main Flow -->
+  <div class="flow">
+
+    <!-- Step 1 -->
+    <div class="step s1">
+      <div class="step-num">Step 01</div>
+      <div class="step-icon">👨‍💻</div>
+      <div class="step-title">Developer Commits Code</div>
+      <div class="step-desc">feature branch<br/>pushed to GitHub</div>
+    </div>
+
+    <div class="arrow">
+      <svg viewBox="0 0 48 16" fill="none">
+        <line x1="0" y1="8" x2="38" y2="8" stroke="#00d4ff" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+        <polyline points="34,3 44,8 34,13" stroke="#00d4ff" stroke-width="1.5" fill="none" opacity="0.8"/>
+      </svg>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step s2">
+      <div class="step-num">Step 02</div>
+      <div class="step-icon">🔀</div>
+      <div class="step-title">Pull Request Raised</div>
+      <div class="step-desc">PR opened<br/>feature → main</div>
+    </div>
+
+    <div class="arrow">
+      <svg viewBox="0 0 48 16" fill="none">
+        <line x1="0" y1="8" x2="38" y2="8" stroke="#00d4ff" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+        <polyline points="34,3 44,8 34,13" stroke="#00d4ff" stroke-width="1.5" fill="none" opacity="0.8"/>
+      </svg>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step s3">
+      <div class="step-num">Step 03</div>
+      <div class="step-icon">⚡</div>
+      <div class="step-title">GitHub Actions Triggers</div>
+      <div class="step-desc">provision.yml<br/>workflow runs</div>
+    </div>
+
+    <div class="arrow">
+      <svg viewBox="0 0 48 16" fill="none">
+        <line x1="0" y1="8" x2="38" y2="8" stroke="#00d4ff" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+        <polyline points="34,3 44,8 34,13" stroke="#00d4ff" stroke-width="1.5" fill="none" opacity="0.8"/>
+      </svg>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step s4">
+      <div class="step-num">Step 04</div>
+      <div class="step-icon">🏗️</div>
+      <div class="step-title">ADE Provisions VM</div>
+      <div class="step-desc">Ubuntu VM<br/>branch code deployed</div>
+    </div>
+
+    <div class="arrow">
+      <svg viewBox="0 0 48 16" fill="none">
+        <line x1="0" y1="8" x2="38" y2="8" stroke="#00d4ff" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+        <polyline points="34,3 44,8 34,13" stroke="#00d4ff" stroke-width="1.5" fill="none" opacity="0.8"/>
+      </svg>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="step s5">
+      <div class="step-num">Step 05</div>
+      <div class="step-icon">🖥️</div>
+      <div class="step-title">Developer Gets Azure VM</div>
+      <div class="step-desc">SSH details posted<br/>to PR comment</div>
+    </div>
+
+  </div>
+
+  <!-- Tech tags row -->
+  <div class="connector">
+    <span class="connector-label">Stack</span>
+    <span class="tag tag-blue">📦 Azure Bicep</span>
+    <span class="tag tag-green">🐙 GitHub Actions</span>
+    <span class="tag tag-orange">🔷 Azure Dev Center</span>
+    <span class="tag tag-purple">📋 ADE Catalog</span>
+    <span class="tag tag-cyan">🐧 Ubuntu 22.04 LTS</span>
+    <span class="tag tag-blue">🔑 Azure Key Vault</span>
+  </div>
+
+  <!-- Footer cards -->
+  <div class="footer-row">
+
+    <div class="info-card">
+      <h3>What happens automatically</h3>
+      <div class="items">
+        <div class="info-item"><div class="dot dot-green"></div>VM provisioned in ~10 minutes from PR open</div>
+        <div class="info-item"><div class="dot dot-blue"></div>Feature branch code cloned & deployed on VM</div>
+        <div class="info-item"><div class="dot dot-cyan"></div>Hello World output verified via SSH</div>
+        <div class="info-item"><div class="dot dot-orange"></div>SSH IP, username & password posted to PR</div>
+        <div class="info-item"><div class="dot dot-purple"></div>VM auto-destroyed when PR is closed</div>
+      </div>
+    </div>
+
+    <div class="info-card">
+      <h3>PR Comment — developer receives</h3>
+      <div class="pr-comment">
+        <div class="pr-header">✅ ADE Dev Environment Ready</div>
+        <div class="pr-line"><span class="pr-key">Environment</span><span class="pr-val cyan">env-pr-7</span></div>
+        <div class="pr-line"><span class="pr-key">Branch</span><span class="pr-val green">feature/my-change</span></div>
+        <div class="pr-line"><span class="pr-key">VM IP</span><span class="pr-val">20.115.42.87</span></div>
+        <div class="pr-line"><span class="pr-key">SSH</span><span class="pr-val cyan">ssh azureuser@20.115.42.87</span></div>
+        <div class="pr-line"><span class="pr-key">Output</span><span class="pr-val green">Hello World from Azure VM!</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="watermark">WELLS FARGO · INNOVATION LAB · ADE POC PHASE 1 · CONFIDENTIAL</div>
+
+</div>
+</body>
+</html>
