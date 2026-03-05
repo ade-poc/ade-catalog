@@ -8,7 +8,7 @@ import datetime
 branch = "BRANCH_PLACEHOLDER"  # replaced at deploy time
 
 print("=" * 50)
-print("  Hello World from Azure VM! Take 5")
+print("  Hello World from Azure VM! Demo of ADE")
 print("=" * 50)
 print(f"  Branch   : {branch}")
 print(f"  Host     : {socket.gethostname()}")
